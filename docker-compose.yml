@@ -1,0 +1,95 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  docker-compose.yml — Week 2 Full-Stack App                  ║
+# ║  Services: FE (Nginx) | BE (Node.js) | DB (SQLite volume)   ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+services:
+
+  # ─────────────────────────────────────────────────────────────
+  #  Frontend  —  Nginx serves static HTML/JS/CSS
+  # ─────────────────────────────────────────────────────────────
+  fe:
+    build:
+      context: ./FE
+      dockerfile: Dockerfile
+    container_name: week2_fe
+    ports:
+      - "8080:80"          # Host port 8080 → Container port 80
+    depends_on:
+      be:
+        condition: service_healthy   # Only start after BE is healthy
+    networks:
+      - week2net
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  #  Backend  —  Node.js + Express REST API
+  # ─────────────────────────────────────────────────────────────
+  be:
+    build:
+      context: ./BE
+      dockerfile: Dockerfile
+    container_name: week2_be
+    ports:
+      - "3000:3000"        # Host port 3000 → Container port 3000
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DB_PATH=/data/app.db
+    volumes:
+      # Named volume: persists SQLite DB across container restarts
+      - db-data:/data
+    networks:
+      - week2net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+
+  # ─────────────────────────────────────────────────────────────
+  #  Redis  —  Optional in-memory cache (demonstrates multi-service)
+  # ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: week2_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - week2net
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+
+  # ─────────────────────────────────────────────────────────────
+  #  Nginx  —  Reverse proxy (optional: routes /api → BE, / → FE)
+  # ─────────────────────────────────────────────────────────────
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: week2_nginx_proxy
+    ports:
+      - "80:80"            # Access everything via port 80 through this proxy
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - fe
+      - be
+    networks:
+      - week2net
+    restart: unless-stopped
+
+# ─────────────────────────────────────────────────────────────────
+#  Networks  —  Isolated bridge network for container communication
+# ─────────────────────────────────────────────────────────────────
+networks:
+  week2net:
+    driver: bridge
+
+# ─────────────────────────────────────────────────────────────────
+#  Volumes  —  Persistent storage for DB and Redis data
+# ─────────────────────────────────────────────────────────────────
+volumes:
+  db-data:
+    name: week2_db_data
+  redis-data:
+    name: week2_redis_data

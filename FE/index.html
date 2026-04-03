@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DevOps App — Week 2</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            width: 100%;
+            padding: 28px 20px 18px;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #79c0ff;
+            letter-spacing: 1px;
+        }
+
+        header p {
+            margin-top: 6px;
+            font-size: 0.9rem;
+            color: #8b949e;
+        }
+
+        main {
+            flex: 1;
+            width: 100%;
+            max-width: 900px;
+            padding: 32px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .card h2 {
+            font-size: 1.1rem;
+            color: #a5d6ff;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 10px;
+        }
+
+        /* ---- Todos ---- */
+        #todo-form { display: flex; gap: 10px; margin-bottom: 16px; }
+
+        #todo-input {
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.07);
+            color: #e0e0e0;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #todo-input:focus { border-color: #79c0ff; }
+
+        #todo-form button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            background: #238636;
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #todo-form button:hover { background: #2ea043; }
+
+        #todo-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        #todo-list li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        #todo-list li.done { opacity: 0.45; text-decoration: line-through; }
+
+        #todo-list li span { flex: 1; }
+
+        #todo-list li button {
+            border: none;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn-del { background: #da3633; color: #fff; }
+        .btn-toggle { background: #1f6feb; color: #fff; }
+        #todo-list li button:hover { opacity: 0.8; }
+
+        /* ---- API Status ---- */
+        #status-bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .badge.ok { background: rgba(35, 134, 54, 0.4); color: #7ee787; }
+        .badge.err { background: rgba(218, 54, 51, 0.4); color: #ff7b72; }
+
+        /* ---- Fetch Todos Button ---- */
+        #fetch-todos {
+            margin-bottom: 16px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.07);
+            color: #e0e0e0;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #fetch-todos:hover { background: rgba(255, 255, 255, 0.12); }
+
+        /* ---- Backend Info ---- */
+        #be-info {
+            font-size: 0.9rem;
+            color: #8b949e;
+            line-height: 1.6;
+        }
+
+        #be-info .label { color: #79c0ff; font-weight: 600; }
+
+        footer {
+            padding: 16px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #484f58;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🐳 DevOps Todo App</h1>
+    <p>Week 2 — Full-Stack App (FE + BE + DB via Docker Compose)</p>
+</header>
+
+<main>
+
+    <!-- ── Todos ── -->
+    <div class="card">
+        <h2>Todos</h2>
+        <form id="todo-form">
+            <input id="todo-input" type="text" placeholder="Add a new todo…" autocomplete="off" />
+            <button type="submit">Add</button>
+        </form>
+        <button id="fetch-todos">↺ Refresh from API</button>
+        <ul id="todo-list"></ul>
+    </div>
+
+    <!-- ── API Status ── -->
+    <div class="card">
+        <h2>API Status</h2>
+        <div id="status-bar">
+            <span>Backend:</span>
+            <span id="be-status" class="badge err">Checking…</span>
+            <span id="be-ver" style="color:#8b949e; font-size:0.8rem;"></span>
+        </div>
+        <div id="be-info"></div>
+    </div>
+
+</main>
+
+<footer>Powered by Node.js &bull; Express &bull; SQLite &bull; Docker</footer>
+
+<script>
+    const API = 'http://localhost:3000';
+
+    // ── Check backend health ──────────────────────────────
+    async function checkHealth() {
+        const badge = document.getElementById('be-status');
+        const ver   = document.getElementById('be-ver');
+        const info  = document.getElementById('be-info');
+        try {
+            const res  = await fetch(`${API}/health`);
+            const data = await res.json();
+            badge.textContent = 'OK';
+            badge.className   = 'badge ok';
+            ver.textContent   = `v${data.version}`;
+            info.innerHTML    = `
+                <div><span class="label">Hostname:</span> ${data.hostname}</div>
+                <div><span class="label">Uptime:</span> ${Math.round(data.uptime)}s</div>
+                <div><span class="label">Database:</span> ${data.db}</div>
+            `;
+        } catch {
+            badge.textContent = 'OFFLINE';
+            badge.className   = 'badge err';
+            info.innerHTML    = '<span style="color:#ff7b72;">Cannot reach backend. Is Docker Compose running?</span>';
+        }
+    }
+
+    // ── Fetch & render todos ──────────────────────────────
+    async function loadTodos() {
+        const res  = await fetch(`${API}/api/todos`);
+        const todos = await res.json();
+        const list  = document.getElementById('todo-list');
+        list.innerHTML = '';
+        todos.forEach(t => {
+            const li = document.createElement('li');
+            li.className = t.done ? 'done' : '';
+            li.innerHTML = `
+                <button class="btn-toggle" data-id="${t.id}" data-done="${t.done}">
+                    ${t.done ? '↩' : '✓'}
+                </button>
+                <span>${escHtml(t.text)}</span>
+                <button class="btn-del" data-id="${t.id}">✕</button>
+            `;
+            list.appendChild(li);
+        });
+    }
+
+    function escHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── Add todo ──────────────────────────────────────────
+    document.getElementById('todo-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const input = document.getElementById('todo-input');
+        const text   = input.value.trim();
+        if (!text) return;
+        await fetch(`${API}/api/todos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+        });
+        input.value = '';
+        loadTodos();
+    });
+
+    // ── Toggle / Delete ───────────────────────────────────
+    document.getElementById('todo-list').addEventListener('click', async e => {
+        const id = e.target.dataset.id;
+        if (!id) return;
+        if (e.target.classList.contains('btn-toggle')) {
+            await fetch(`${API}/api/todos/${id}/toggle`, { method: 'PATCH' });
+        } else if (e.target.classList.contains('btn-del')) {
+            await fetch(`${API}/api/todos/${id}`, { method: 'DELETE' });
+        }
+        loadTodos();
+    });
+
+    // ── Refresh button ────────────────────────────────────
+    document.getElementById('fetch-todos').addEventListener('click', loadTodos);
+
+    // ── Init ──────────────────────────────────────────────
+    checkHealth();
+    loadTodos();
+    setInterval(checkHealth, 15000);
+</script>
+
+</body>
+</html>
