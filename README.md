@@ -1,15 +1,15 @@
-# Week 2 — Docker Hands-On: Full-Stack App (FE + BE + DB)
+# DevOps Todolist: Full-Stack App (FE + BE + DB)
 
 ## Overview
 
-This project demonstrates a **multi-container Docker application** built during Week 2 of the SCC Internship Training Program.
+This project demonstrates a **multi-container Docker application** with a React/Vite task board, an Express API backed by SQLite, and an Nginx reverse proxy.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    nginx reverse proxy                   │
 │                  (port 80 — single entry)                │
 │     /api/*  ───────────────────────►  BE (Node.js :3000) │
-│     /*     ───────────────────────►  FE (Nginx :80)      │
+│     /*     ───────────────────────►  FE (React/Vite :80) │
 └──────────────────┬──────────────────────────────────────┘
                    │
          ┌─────────┼─────────────┐
@@ -34,7 +34,7 @@ This project demonstrates a **multi-container Docker application** built during 
 | Service | Image | Port (host) | Description |
 |---------|-------|-------------|-------------|
 | `nginx-proxy` | `nginx:alpine` | `80` | Reverse proxy — routes `/api/*` to BE, all else to FE |
-| `fe` | custom (`./FE/Dockerfile`) | `8080` | Nginx serving static HTML (Todo UI) |
+| `fe` | custom (`./FE/Dockerfile`) | `8080` | React/Vite build served by Nginx |
 | `be` | custom (`./BE/Dockerfile`) | `3000` | Node.js + Express REST API |
 | `redis` | `redis:7-alpine` | `6379` | In-memory cache (optional) |
 
@@ -51,9 +51,9 @@ docker compose version  # Docker Compose version v2.x+
 
 ## Quick Start
 
-### 1. Navigate to the week2 folder
+### 1. Navigate to the devops-todolist folder
 ```bash
-cd week2/
+cd devops-todolist/
 ```
 
 ### 2. Build & start all services
@@ -82,7 +82,8 @@ week2_redis    week2-redis      Up             0.0.0.0:6379->6379/tcp
 | http://localhost/ | App via Nginx reverse proxy |
 | http://localhost:8080/ | Frontend (Nginx static) direct |
 | http://localhost:3000/health | Backend health check |
-| http://localhost:3000/api/todos | REST API |
+| http://localhost:3000/api/tasks | Task REST API |
+| http://localhost:3000/api/todos | Legacy todo API (compat) |
 
 ### 5. View logs
 ```bash
@@ -92,6 +93,17 @@ docker compose logs -f
 # Specific service
 docker compose logs -f be
 docker compose logs -f fe
+```
+
+## Production Deployment (Port 80)
+
+Production uses the Nginx reverse proxy on port 80 with images pulled from Docker Hub via [docker-compose.prod.yml](docker-compose.prod.yml). The CI/CD workflow lives at [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml) and uses `vars.HOST`, `secrets.SSH_KEY`, `secrets.DOCKER_USERNAME`, and `secrets.DOCKER_TOKEN`.
+
+Manual deploy on a Linux host:
+```bash
+export DOCKER_USERNAME=<your-dockerhub-username>
+scp docker-compose.prod.yml nginx.conf azureuser@<host>:/home/azureuser/
+ssh azureuser@<host> "DOCKER_USERNAME=$DOCKER_USERNAME docker compose -f /home/azureuser/docker-compose.prod.yml up -d"
 ```
 
 ## Common Docker Commands
@@ -120,18 +132,20 @@ docker compose restart be
 ## Project Structure
 
 ```
-week2/
+devops-todolist/
 ├── FE/
-│   ├── index.html          # Todo UI (static HTML/JS/CSS)
-│   └── Dockerfile          # Multi-stage: nginx:alpine
+│   ├── index.html          # Vite entry
+│   ├── src/                # React task board UI
+│   └── Dockerfile          # Vite build -> nginx
 │
 ├── BE/
-│   ├── server.js           # Express REST API
+│   ├── server.js           # Express task API
 │   ├── package.json         # Node.js dependencies
 │   └── Dockerfile           # Multi-stage: node:20-alpine
 │
 ├── nginx.conf               # Reverse proxy configuration
-├── docker-compose.yml       # Orchestrates all services
+├── docker-compose.yml       # Local development compose
+├── docker-compose.prod.yml  # Production compose (pulls Docker Hub images)
 ├── .env.example             # Environment variable template
 └── README.md                # This file
 ```
@@ -152,36 +166,45 @@ Response 200:
 }
 ```
 
-### List Todos
+### List Tasks
+```
+GET /api/tasks
+Response 200: [{ "id": 1, "text": "...", "status": "todo", "created_at": "..." }]
+```
+
+### Create Task
+```
+POST /api/tasks
+Body:    { "text": "My new task", "status": "todo" }
+Response 201: { "id": 2, "text": "My new task", "status": "todo" }
+```
+
+### Update Task Status
+```
+PATCH /api/tasks/:id/status
+Body:    { "status": "done" }
+Response 200: { "id": 1, "text": "...", "status": "done" }
+```
+
+### Delete Task
+```
+DELETE /api/tasks/:id
+Response 204
+```
+
+### Legacy Todos (compat)
 ```
 GET /api/todos
-Response 200: [{ "id": 1, "text": "...", "done": false, "created_at": "..." }]
-```
-
-### Create Todo
-```
 POST /api/todos
-Body:    { "text": "My new todo" }
-Response 201: { "id": 2, "text": "My new todo", "done": false }
-```
-
-### Toggle Todo
-```
 PATCH /api/todos/:id/toggle
-Response 200: { "id": 1, "text": "...", "done": true }
-```
-
-### Delete Todo
-```
 DELETE /api/todos/:id
-Response 200: { "success": true }
 ```
 
 ## Key Docker Concepts Practiced (Week 2)
 
 | Concept | Where it is used |
 |---------|-----------------|
-| **Multi-stage Dockerfile** | `FE/Dockerfile` (build → production) |
+| **Multi-stage Dockerfile** | `FE/Dockerfile` (Vite build → nginx) |
 | **Named volumes** | `db-data` for SQLite persistence |
 | **Bridge networking** | `week2net` isolates containers |
 | **Health checks** | `be` service uses `/health` endpoint |

@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  docker-compose.yml — Week 2 Full-Stack App                  ║
-# ║  Services: FE (Nginx) | BE (Node.js) | DB (SQLite volume)   ║
+# ║  Full-Stack App                                              ║
+# ║  Services: FE (Nginx) | BE (Node.js) | DB (SQLite volume)    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 services:
@@ -12,7 +12,7 @@ services:
     build:
       context: ./FE
       dockerfile: Dockerfile
-    container_name: week2_fe
+    container_name: devops_todolist_fe
     ports:
       - "8080:80"          # Host port 8080 → Container port 80
     depends_on:
@@ -29,7 +29,7 @@ services:
     build:
       context: ./BE
       dockerfile: Dockerfile
-    container_name: week2_be
+    container_name: devops_todolist_be
     ports:
       - "3000:3000"        # Host port 3000 → Container port 3000
     environment:
@@ -51,7 +51,7 @@ services:
   # ─────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: week2_redis
+    container_name: devops_todolist_redis
     ports:
       - "6379:6379"
     networks:
@@ -66,7 +66,7 @@ services:
   # ─────────────────────────────────────────────────────────────
   nginx-proxy:
     image: nginx:alpine
-    container_name: week2_nginx_proxy
+    container_name: devops_todolist_nginx_proxy
     ports:
       - "80:80"            # Access everything via port 80 through this proxy
     volumes:
@@ -90,6 +90,6 @@ networks:
 # ─────────────────────────────────────────────────────────────────
 volumes:
   db-data:
-    name: week2_db_data
+    name: db_data
   redis-data:
-    name: week2_redis_data
+    name: redis_data

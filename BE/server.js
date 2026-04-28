@@ -1,139 +1,266 @@
 'use strict';
 
 const express = require('express');
-const cors    = require('cors');
+const cors = require('cors');
 const Database = require('better-sqlite3');
-const path    = require('path');
-const os      = require('os');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
-// ── App ────────────────────────────────────────────────────
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-
-// ── Database ───────────────────────────────────────────────
 const DB_PATH = process.env.DB_PATH || '/data/app.db';
-const db      = new Database(DB_PATH);
+const VALID_STATUSES = ['todo', 'in-progress', 'done'];
+const STATUS_ORDER = "CASE status WHEN 'todo' THEN 0 WHEN 'in-progress' THEN 1 WHEN 'done' THEN 2 ELSE 3 END";
 
-// Enable WAL mode for better concurrent read performance
+const dbDirectory = path.dirname(DB_PATH);
+if (dbDirectory && !fs.existsSync(dbDirectory)) {
+    fs.mkdirSync(dbDirectory, { recursive: true });
+}
+
+const db = new Database(DB_PATH);
+
 db.pragma('journal_mode = WAL');
-
-// Create todos table if it doesn't exist
 db.exec(`
-    CREATE TABLE IF NOT EXISTS todos (
-        id      INTEGER PRIMARY KEY AUTOINCREMENT,
-        text    TEXT    NOT NULL,
-        done    INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'todo',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 `);
 
-// Seed one welcome todo if table is empty
-const count = db.prepare('SELECT COUNT(*) as c FROM todos').get();
-if (count.c === 0) {
-    const insert = db.prepare('INSERT INTO todos (text, done) VALUES (?, ?)');
-    insert.run('Welcome to the Week 2 Docker App!', 0);
-    insert.run('Try adding and completing todos', 0);
-    insert.run('Data is persisted in SQLite inside the container', 1);
+function hasTable(tableName) {
+    return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
+}
+
+function normalizeTask(row) {
+    return {
+        id: row.id,
+        text: row.text,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    };
+}
+
+function normalizeTodo(row) {
+    return {
+        id: row.id,
+        text: row.text,
+        done: row.status === 'done',
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    };
+}
+
+function validateStatus(status) {
+    return typeof status === 'string' && VALID_STATUSES.includes(status);
+}
+
+function getTaskById(id) {
+    return db.prepare('SELECT id, text, status, created_at, updated_at FROM tasks WHERE id = ?').get(id);
+}
+
+function listTasks() {
+    return db.prepare(`
+        SELECT id, text, status, created_at, updated_at
+        FROM tasks
+        ORDER BY ${STATUS_ORDER}, id ASC
+    `).all();
+}
+
+function createTask(text, status = 'todo') {
+    const result = db.prepare('INSERT INTO tasks (text, status) VALUES (?, ?)').run(text, status);
+    return getTaskById(result.lastInsertRowid);
+}
+
+function updateTaskStatus(id, status) {
+    return db.prepare(`
+        UPDATE tasks
+        SET status = ?, updated_at = datetime('now')
+        WHERE id = ?
+        RETURNING id, text, status, created_at, updated_at
+    `).get(status, id);
+}
+
+function deleteTask(id) {
+    return db.prepare('DELETE FROM tasks WHERE id = ?').run(id).changes;
+}
+
+const tasksCount = db.prepare('SELECT COUNT(*) AS count FROM tasks').get();
+if (tasksCount.count === 0 && hasTable('todos')) {
+    const migratedTodos = db.prepare('SELECT id, text, done, created_at FROM todos ORDER BY id ASC').all();
+    const migrate = db.transaction((records) => {
+        const insertTaskRow = db.prepare('INSERT INTO tasks (text, status, created_at, updated_at) VALUES (?, ?, ?, ?)');
+        records.forEach((todo) => {
+            insertTaskRow.run(
+                todo.text,
+                todo.done ? 'done' : 'todo',
+                todo.created_at || new Date().toISOString(),
+                todo.created_at || new Date().toISOString(),
+            );
+        });
+    });
+    migrate(migratedTodos);
+}
+
+const currentCount = db.prepare('SELECT COUNT(*) AS count FROM tasks').get();
+if (currentCount.count === 0) {
+    createTask('Write the first task', 'todo');
+    createTask('Move one task across the board', 'in-progress');
+    createTask('Finish one task and place it here', 'done');
 }
 
 console.log(`[DB] Connected — ${DB_PATH}`);
 
-// ── Middleware ─────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 
-// Serve FE static files in production (when not proxied)
-app.use(express.static(path.join(__dirname, '../FE')));
-
-// ── Health check ──────────────────────────────────────────
 app.get('/health', (_req, res) => {
     res.json({
-        status:    'ok',
-        version:   '1.0.0',
-        hostname:  os.hostname(),
-        uptime:    process.uptime(),
-        db:        DB_PATH,
+        status: 'ok',
+        version: '2.0.0',
+        hostname: os.hostname(),
+        uptime: process.uptime(),
+        db: DB_PATH,
         timestamp: new Date().toISOString(),
     });
 });
 
-// ── Todo routes ────────────────────────────────────────────
+app.get('/api/tasks', (_req, res) => {
+    try {
+        res.json(listTasks().map(normalizeTask));
+    } catch (err) {
+        console.error('[GET /api/tasks]', err.message);
+        res.status(500).json({ error: 'Failed to fetch tasks' });
+    }
+});
 
-// GET /api/todos — list all todos
+app.post('/api/tasks', (req, res) => {
+    const { text, status = 'todo' } = req.body;
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ error: 'Field "text" is required and must be non-empty.' });
+    }
+
+    if (!validateStatus(status)) {
+        return res.status(400).json({ error: 'Field "status" must be todo, in-progress, or done.' });
+    }
+
+    try {
+        const task = createTask(text.trim(), status);
+        res.status(201).json(normalizeTask(task));
+    } catch (err) {
+        console.error('[POST /api/tasks]', err.message);
+        res.status(500).json({ error: 'Failed to create task' });
+    }
+});
+
+app.patch('/api/tasks/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!validateStatus(status)) {
+        return res.status(400).json({ error: 'Field "status" must be todo, in-progress, or done.' });
+    }
+
+    try {
+        const updatedTask = updateTaskStatus(id, status);
+        if (!updatedTask) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+        res.json(normalizeTask(updatedTask));
+    } catch (err) {
+        console.error('[PATCH /api/tasks/:id/status]', err.message);
+        res.status(500).json({ error: 'Failed to update task' });
+    }
+});
+
+app.delete('/api/tasks/:id', (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const changes = deleteTask(id);
+        if (changes === 0) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+        res.status(204).end();
+    } catch (err) {
+        console.error('[DELETE /api/tasks/:id]', err.message);
+        res.status(500).json({ error: 'Failed to delete task' });
+    }
+});
+
 app.get('/api/todos', (_req, res) => {
     try {
-        const todos = db
-            .prepare('SELECT id, text, done, created_at FROM todos ORDER BY id ASC')
-            .all();
-        // SQLite stores booleans as 0/1; normalise to JS booleans
-        res.json(todos.map(t => ({ ...t, done: Boolean(t.done) })));
+        res.json(listTasks().map(normalizeTodo));
     } catch (err) {
         console.error('[GET /api/todos]', err.message);
         res.status(500).json({ error: 'Failed to fetch todos' });
     }
 });
 
-// POST /api/todos — create a todo
 app.post('/api/todos', (req, res) => {
-    const { text } = req.body;
+    const { text, done = false } = req.body;
+
     if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'Field "text" is required and must be non-empty.' });
     }
+
     try {
-        const result = db
-            .prepare('INSERT INTO todos (text) VALUES (?)')
-            .run(text.trim());
-        const todo = db
-            .prepare('SELECT id, text, done, created_at FROM todos WHERE id = ?')
-            .get(result.lastInsertRowid);
-        res.status(201).json({ ...todo, done: Boolean(todo.done) });
+        const task = createTask(text.trim(), done ? 'done' : 'todo');
+        res.status(201).json(normalizeTodo(task));
     } catch (err) {
         console.error('[POST /api/todos]', err.message);
         res.status(500).json({ error: 'Failed to create todo' });
     }
 });
 
-// PATCH /api/todos/:id/toggle — toggle done state
 app.patch('/api/todos/:id/toggle', (req, res) => {
     const { id } = req.params;
+
     try {
-        const updated = db
-            .prepare('UPDATE todos SET done = NOT done WHERE id = ? RETURNING *')
-            .get(id);
-        if (!updated) return res.status(404).json({ error: 'Todo not found' });
-        res.json({ ...updated, done: Boolean(updated.done) });
+        const currentTask = getTaskById(id);
+        if (!currentTask) {
+            return res.status(404).json({ error: 'Todo not found' });
+        }
+
+        const nextStatus = currentTask.status === 'done' ? 'todo' : 'done';
+        const updatedTask = updateTaskStatus(id, nextStatus);
+        res.json(normalizeTodo(updatedTask));
     } catch (err) {
         console.error('[PATCH /api/todos/:id/toggle]', err.message);
         res.status(500).json({ error: 'Failed to toggle todo' });
     }
 });
 
-// DELETE /api/todos/:id — delete a todo
 app.delete('/api/todos/:id', (req, res) => {
     const { id } = req.params;
+
     try {
-        const info = db.prepare('DELETE FROM todos WHERE id = ?').run(id);
-        if (info.changes === 0) return res.status(404).json({ error: 'Todo not found' });
-        res.json({ success: true });
+        const changes = deleteTask(id);
+        if (changes === 0) {
+            return res.status(404).json({ error: 'Todo not found' });
+        }
+        res.status(204).end();
     } catch (err) {
         console.error('[DELETE /api/todos/:id]', err.message);
         res.status(500).json({ error: 'Failed to delete todo' });
     }
 });
 
-// ── 404 fallback ───────────────────────────────────────────
 app.use((_req, res) => {
     res.status(404).json({ error: 'Not found' });
 });
 
-// ── Error handler ──────────────────────────────────────────
 app.use((err, _req, res, _next) => {
     console.error('[Unhandled error]', err);
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// ── Start ──────────────────────────────────────────────────
 app.listen(PORT, HOST, () => {
     console.log(`[Server] Listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
 });

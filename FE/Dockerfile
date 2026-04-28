@@ -1,24 +1,21 @@
-# ── Frontend Dockerfile ──────────────────────────────────────
-# Stage 1 — build (Nginx with static HTML)
-FROM nginx:alpine AS builder
+FROM node:20-alpine AS build
 
-# Copy static files
-COPY . /usr/share/nginx/html/
+WORKDIR /app
 
-# ── Production stage: serve with Nginx ──────────────────────
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
 FROM nginx:alpine
 
-# Remove default Nginx site
 RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy static files from builder stage
-COPY --from=builder /usr/share/nginx/html/ /usr/share/nginx/html/
-
-# Expose port 80
 EXPOSE 80
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-    CMD wget -qO- http://localhost/ || exit 1
+    CMD wget -qO- http://localhost/ >/dev/null || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
