@@ -12,6 +12,8 @@ services:
     build:
       context: ./FE
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:3001
     container_name: devops_todolist_fe
     ports:
       - "8080:80"          # Host port 8080 → Container port 80
@@ -19,7 +21,7 @@ services:
       be:
         condition: service_healthy   # Only start after BE is healthy
     networks:
-      - week2net
+      - net
     restart: unless-stopped
 
   # ─────────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ services:
       dockerfile: Dockerfile
     container_name: devops_todolist_be
     ports:
-      - "3000:3000"        # Host port 3000 → Container port 3000
+      - "3001:3000"        # Host port 3001 → Container port 3000
     environment:
       - NODE_ENV=production
       - HOST=0.0.0.0
@@ -41,7 +43,7 @@ services:
       # Named volume: persists SQLite DB across container restarts
       - db-data:/data
     networks:
-      - week2net
+      - net
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
@@ -55,7 +57,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - week2net
+      - net
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
@@ -75,14 +77,14 @@ services:
       - fe
       - be
     networks:
-      - week2net
+      - net
     restart: unless-stopped
 
 # ─────────────────────────────────────────────────────────────────
 #  Networks  —  Isolated bridge network for container communication
 # ─────────────────────────────────────────────────────────────────
 networks:
-  week2net:
+  net:
     driver: bridge
 
 # ─────────────────────────────────────────────────────────────────

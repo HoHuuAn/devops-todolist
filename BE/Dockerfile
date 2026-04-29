@@ -1,21 +1,26 @@
 # ── Backend Dockerfile ──────────────────────────────────────
-# Uses Node.js 20 LTS
-FROM node:20-alpine AS builder
+# Uses Node.js 20 LTS (Debian base for native module compatibility)
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
+# Install build tools for native deps like better-sqlite3
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (benefits Docker layer cache)
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --build-from-source=better-sqlite3
 
 # ── Production stage ───────────────────────────────────────
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser  -u 1001 -S appuser -G appgroup
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid appgroup --create-home --shell /usr/sbin/nologin appuser
 
 # Copy dependencies from builder
 COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules

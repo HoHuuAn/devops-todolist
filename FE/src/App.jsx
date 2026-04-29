@@ -1,75 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
-import { createTask, deleteTask, getHealth, getTasks, updateTaskStatus } from './api';
-
-const COLUMNS = [
-    { id: 'todo', title: 'To Do', hint: 'Backlog and ready work' },
-    { id: 'in-progress', title: 'In Progress', hint: 'Currently being worked on' },
-    { id: 'done', title: 'Done', hint: 'Completed and shipped' },
-];
-
-const STATUS_LABELS = {
-    todo: 'To Do',
-    'in-progress': 'In Progress',
-    done: 'Done',
-};
-
-function TaskCard({ task, onDelete }) {
-    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-        id: `task-${task.id}`,
-        data: { task },
-    });
-
-    const style = {
-        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        opacity: isDragging ? 0.55 : 1,
-    };
-
-    return (
-        <article ref={setNodeRef} className="task-card" style={style} {...attributes} {...listeners}>
-            <div className="task-card__topline">
-                <span className={`status-pill status-pill--${task.status}`}>{STATUS_LABELS[task.status]}</span>
-                <button type="button" className="icon-button" onClick={() => onDelete(task.id)} aria-label={`Delete ${task.text}`}>
-                    Delete
-                </button>
-            </div>
-            <h3>{task.text}</h3>
-            <p>Drag this card to another column to update its status.</p>
-        </article>
-    );
-}
-
-function Column({ column, tasks, onDelete }) {
-    const { setNodeRef, isOver } = useDroppable({
-        id: column.id,
-        data: { status: column.id },
-    });
-
-    return (
-        <section ref={setNodeRef} className={`board-column ${isOver ? 'board-column--over' : ''}`}>
-            <header className="board-column__header">
-                <div>
-                    <h2>{column.title}</h2>
-                    <p>{column.hint}</p>
-                </div>
-                <span className="board-column__count">{tasks.length}</span>
-            </header>
-            <div className="board-column__body">
-                {tasks.length === 0 ? (
-                    <div className="empty-state">Drop a task here</div>
-                ) : (
-                    tasks.map((task) => <TaskCard key={task.id} task={task} onDelete={onDelete} />)
-                )}
-            </div>
-        </section>
-    );
-}
+import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+import { createTask, deleteTask, getTasks, updateTaskStatus } from './api';
+import { COLUMNS } from './constants';
+import Column from './components/Column';
+import TaskCard from './components/TaskCard';
 
 export default function App() {
     const [tasks, setTasks] = useState([]);
     const [taskText, setTaskText] = useState('');
-    const [health, setHealth] = useState({ state: 'checking', message: 'Checking backend...' });
+    const [taskDescription, setTaskDescription] = useState('');
     const [error, setError] = useState('');
+    const [activeTask, setActiveTask] = useState(null);
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
     const tasksByStatus = useMemo(
@@ -87,15 +28,10 @@ export default function App() {
 
     async function loadInitialData() {
         try {
-            const [taskResponse, healthResponse] = await Promise.all([getTasks(), getHealth()]);
+            const taskResponse = await getTasks();
             setTasks(taskResponse);
-            setHealth({
-                state: 'ok',
-                message: `Backend online on ${healthResponse.hostname} · ${healthResponse.db}`,
-            });
             setError('');
         } catch (requestError) {
-            setHealth({ state: 'error', message: 'Backend unavailable' });
             setError(requestError.message);
         }
     }
@@ -103,15 +39,17 @@ export default function App() {
     async function handleSubmit(event) {
         event.preventDefault();
         const text = taskText.trim();
+        const description = taskDescription.trim();
 
         if (!text) {
             return;
         }
 
         try {
-            const createdTask = await createTask(text);
+            const createdTask = await createTask(text, description);
             setTasks((currentTasks) => [createdTask, ...currentTasks]);
             setTaskText('');
+            setTaskDescription('');
             setError('');
         } catch (requestError) {
             setError(requestError.message);
@@ -127,7 +65,17 @@ export default function App() {
         }
     }
 
+    function handleDragStart(event) {
+        const { active } = event;
+        setActiveTask(active.data.current?.task);
+    }
+
+    function handleDragCancel() {
+        setActiveTask(null);
+    }
+
     async function handleDragEnd(event) {
+        setActiveTask(null);
         const { active, over } = event;
 
         if (!over || active.id === over.id) {
@@ -155,11 +103,8 @@ export default function App() {
             <main className="app-card">
                 <section className="hero">
                     <div>
-                        <p className="eyebrow">Week 2</p>
-                        <h1>Task board with drag and drop</h1>
-                        <p className="hero-copy">A light React board with three columns, backed by a small Express API.</p>
+                        <h1>Task board</h1>
                     </div>
-                    <div className={`health-badge health-badge--${health.state}`}>{health.message}</div>
                 </section>
 
                 <form className="task-form" onSubmit={handleSubmit}>
@@ -168,15 +113,28 @@ export default function App() {
                         id="task-text"
                         value={taskText}
                         onChange={(event) => setTaskText(event.target.value)}
-                        placeholder="Add a task for the board"
+                        placeholder="Task title"
                         autoComplete="off"
+                    />
+                    <label className="sr-only" htmlFor="task-description">Task description</label>
+                    <textarea
+                        id="task-description"
+                        value={taskDescription}
+                        onChange={(event) => setTaskDescription(event.target.value)}
+                        placeholder="Task description"
+                        rows={2}
                     />
                     <button type="submit">Add task</button>
                 </form>
 
                 {error ? <div className="error-banner">{error}</div> : null}
 
-                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                <DndContext 
+                    sensors={sensors} 
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragCancel={handleDragCancel}
+                >
                     <section className="board-grid">
                         {COLUMNS.map((column) => (
                             <Column
@@ -187,6 +145,9 @@ export default function App() {
                             />
                         ))}
                     </section>
+                    <DragOverlay>
+                        {activeTask ? <TaskCard task={activeTask} isOverlay /> : null}
+                    </DragOverlay>
                 </DndContext>
             </main>
         </div>

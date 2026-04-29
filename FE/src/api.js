@@ -21,18 +21,14 @@ async function request(path, options = {}) {
     return response.json();
 }
 
-export function getHealth() {
-    return request('/health');
-}
-
 export function getTasks() {
     return request('/api/tasks');
 }
 
-export function createTask(text) {
+export function createTask(text, description) {
     return request('/api/tasks', {
         method: 'POST',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, description }),
     });
 }
 

@@ -96,10 +96,16 @@ jobs:
         run: |
           printf '%s' "${{ secrets.DOCKER_TOKEN }}" | \
             ssh -o StrictHostKeyChecking=no azureuser@${{ vars.HOST }} \
-            "docker login -u '${{ secrets.DOCKER_USERNAME }}' --password-stdin"
+            "sudo docker login -u '${{ secrets.DOCKER_USERNAME }}' --password-stdin"
 
           ssh -o StrictHostKeyChecking=no azureuser@${{ vars.HOST }} \
-            "DOCKER_USERNAME='${{ secrets.DOCKER_USERNAME }}' docker compose -f /home/azureuser/docker-compose.prod.yml pull"
-
-          ssh -o StrictHostKeyChecking=no azureuser@${{ vars.HOST }} \
-            "DOCKER_USERNAME='${{ secrets.DOCKER_USERNAME }}' docker compose -f /home/azureuser/docker-compose.prod.yml up -d"
+            "set -e; \
+            if docker compose version >/dev/null 2>&1; then COMPOSE_BIN='docker compose'; \
+            elif docker-compose version >/dev/null 2>&1; then COMPOSE_BIN='docker-compose'; \
+            else echo 'Docker Compose not installed on host'; exit 1; fi; \
+            sudo \$COMPOSE_BIN -f /home/azureuser/docker-compose.prod.yml down --remove-orphans --volumes || true; \
+            sudo docker image prune -af || true; \
+            sudo docker volume prune -f || true; \
+            sudo docker network prune -f || true; \
+            sudo env DOCKER_USERNAME='${{ secrets.DOCKER_USERNAME }}' \$COMPOSE_BIN -f /home/azureuser/docker-compose.prod.yml pull; \
+            sudo env DOCKER_USERNAME='${{ secrets.DOCKER_USERNAME }}' \$COMPOSE_BIN -f /home/azureuser/docker-compose.prod.yml up -d"

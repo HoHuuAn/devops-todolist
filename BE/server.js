@@ -26,11 +26,21 @@ db.exec(`
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         text TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'todo',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 `);
+
+function hasColumn(tableName, columnName) {
+    const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+    return columns.some((column) => column.name === columnName);
+}
+
+if (!hasColumn('tasks', 'description')) {
+    db.exec("ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+}
 
 function hasTable(tableName) {
     return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
@@ -40,6 +50,7 @@ function normalizeTask(row) {
     return {
         id: row.id,
         text: row.text,
+        description: row.description ?? '',
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -50,6 +61,7 @@ function normalizeTodo(row) {
     return {
         id: row.id,
         text: row.text,
+        description: row.description ?? '',
         done: row.status === 'done',
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -61,19 +73,19 @@ function validateStatus(status) {
 }
 
 function getTaskById(id) {
-    return db.prepare('SELECT id, text, status, created_at, updated_at FROM tasks WHERE id = ?').get(id);
+    return db.prepare('SELECT id, text, description, status, created_at, updated_at FROM tasks WHERE id = ?').get(id);
 }
 
 function listTasks() {
     return db.prepare(`
-        SELECT id, text, status, created_at, updated_at
+        SELECT id, text, description, status, created_at, updated_at
         FROM tasks
         ORDER BY ${STATUS_ORDER}, id ASC
     `).all();
 }
 
-function createTask(text, status = 'todo') {
-    const result = db.prepare('INSERT INTO tasks (text, status) VALUES (?, ?)').run(text, status);
+function createTask(text, status = 'todo', description = '') {
+    const result = db.prepare('INSERT INTO tasks (text, description, status) VALUES (?, ?, ?)').run(text, description, status);
     return getTaskById(result.lastInsertRowid);
 }
 
@@ -82,7 +94,7 @@ function updateTaskStatus(id, status) {
         UPDATE tasks
         SET status = ?, updated_at = datetime('now')
         WHERE id = ?
-        RETURNING id, text, status, created_at, updated_at
+        RETURNING id, text, description, status, created_at, updated_at
     `).get(status, id);
 }
 
@@ -94,10 +106,11 @@ const tasksCount = db.prepare('SELECT COUNT(*) AS count FROM tasks').get();
 if (tasksCount.count === 0 && hasTable('todos')) {
     const migratedTodos = db.prepare('SELECT id, text, done, created_at FROM todos ORDER BY id ASC').all();
     const migrate = db.transaction((records) => {
-        const insertTaskRow = db.prepare('INSERT INTO tasks (text, status, created_at, updated_at) VALUES (?, ?, ?, ?)');
+        const insertTaskRow = db.prepare('INSERT INTO tasks (text, description, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
         records.forEach((todo) => {
             insertTaskRow.run(
                 todo.text,
+                '',
                 todo.done ? 'done' : 'todo',
                 todo.created_at || new Date().toISOString(),
                 todo.created_at || new Date().toISOString(),
@@ -140,7 +153,7 @@ app.get('/api/tasks', (_req, res) => {
 });
 
 app.post('/api/tasks', (req, res) => {
-    const { text, status = 'todo' } = req.body;
+    const { text, status = 'todo', description = '' } = req.body;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'Field "text" is required and must be non-empty.' });
@@ -151,7 +164,8 @@ app.post('/api/tasks', (req, res) => {
     }
 
     try {
-        const task = createTask(text.trim(), status);
+        const safeDescription = typeof description === 'string' ? description.trim() : '';
+        const task = createTask(text.trim(), status, safeDescription);
         res.status(201).json(normalizeTask(task));
     } catch (err) {
         console.error('[POST /api/tasks]', err.message);
