@@ -89,8 +89,8 @@ jobs:
       - name: Sync production compose file
         run: |
           rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
-            docker-compose.prod.yml \
-            azureuser@${{ vars.HOST }}:/home/azureuser/docker-compose.prod.yml
+            docker-compose.prod.yml nginx.conf \
+            azureuser@${{ vars.HOST }}:/home/azureuser/
 
       - name: Deploy on remote host
         run: |
@@ -103,7 +103,7 @@ jobs:
             if docker compose version >/dev/null 2>&1; then COMPOSE_BIN='docker compose'; \
             elif docker-compose version >/dev/null 2>&1; then COMPOSE_BIN='docker-compose'; \
             else echo 'Docker Compose not installed on host'; exit 1; fi; \
-            sudo \$COMPOSE_BIN -f /home/azureuser/docker-compose.prod.yml down --remove-orphans --volumes || true; \
+            sudo env DOCKER_USERNAME='${{ secrets.DOCKER_USERNAME }}' \$COMPOSE_BIN -f /home/azureuser/docker-compose.prod.yml down --remove-orphans --volumes || true; \
             sudo docker image prune -af || true; \
             sudo docker volume prune -f || true; \
             sudo docker network prune -f || true; \
