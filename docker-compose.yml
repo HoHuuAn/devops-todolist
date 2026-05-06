@@ -13,7 +13,7 @@ services:
       context: ./FE
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://localhost:3001
+        VITE_API_URL: http://localhost:3000
     container_name: devops_todolist_fe
     ports:
       - "8080:80"          # Host port 8080 → Container port 80
@@ -33,7 +33,7 @@ services:
       dockerfile: Dockerfile
     container_name: devops_todolist_be
     ports:
-      - "3001:3000"        # Host port 3001 → Container port 3000
+      - "3000:3000"        # Host port 3000 → Container port 3000
     environment:
       - NODE_ENV=production
       - HOST=0.0.0.0

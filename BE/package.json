@@ -1,7 +1,7 @@
 {
-  "name": "week2-be",
+  "name": "be",
   "version": "1.0.0",
-  "description": "Week 2 Backend — Todo API with Express + SQLite",
+  "description": "Backend — Todo API with Express + SQLite",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

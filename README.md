@@ -6,27 +6,27 @@ This project demonstrates a **multi-container Docker application** with a React/
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    nginx reverse proxy                   │
-│                  (port 80 — single entry)                │
-│     /api/*  ───────────────────────►  BE (Node.js :3000) │
-│     /*     ───────────────────────►  FE (React/Vite :80) │
+│                    nginx reverse proxy                  │
+│                  (port 80 — single entry)               │
+│     /api/*  ───────────────────────►  BE (Node.js :3000)│
+│     /*     ───────────────────────►  FE (React/Vite :80)│
 └──────────────────┬──────────────────────────────────────┘
                    │
          ┌─────────┼─────────────┐
          │         │             │
-       ┌──┴──┐  ┌──┴──┐    ┌────┴────┐
-       │  FE │  │  BE │    │  Redis  │
-       │:8080│  │:3000│    │  :6379  │
-       └──┬──┘  └──┬──┘    └─────────┘
-          │       │
-     ┌────┴───┐   │
-     │Nginx   │   │
-     │static  │   │
-     └────────┘   │
-                 │ (SQLite on named volume)
-           ┌─────┴──────┐
-           │  db-data   │
-           └────────────┘
+      ┌──┴──┐   ┌──┴──┐     ┌────┴────┐
+      │  FE │   │  BE │     │  Redis  │
+      │:8080│   │:3000│     │  :6379  │
+      └──┬──┘   └──┬──┘     └─────────┘
+         │         │
+    ┌────┴───┐     │
+    │Nginx   │     │
+    │static  │     │
+    └────────┘     │
+                   │ (SQLite on named volume)
+             ┌─────┴──────┐
+             │  db-data   │
+             └────────────┘
 ```
 
 ## Services
@@ -69,10 +69,10 @@ docker compose ps
 Expected output:
 ```
 NAME           IMAGE            STATUS          PORTS
-week2_be       week2-be         Up (healthy)    0.0.0.0:3000->3000/tcp
-week2_fe       week2-fe         Up             0.0.0.0:8080->80/tcp
-week2_nginx_proxy nginx-proxy   Up             0.0.0.0:80->80/tcp
-week2_redis    week2-redis      Up             0.0.0.0:6379->6379/tcp
+be             be               Up (healthy)   0.0.0.0:3000->3000/tcp
+fe             fe               Up             0.0.0.0:8080->80/tcp
+nginx_proxy    nginx-proxy      Up             0.0.0.0:80->80/tcp
+redis          redis            Up             0.0.0.0:6379->6379/tcp
 ```
 
 ### 4. Access the app
@@ -119,8 +119,8 @@ docker compose down -v
 docker compose up --build -d
 
 # Inspect a running container
-docker exec -it week2_be sh
-docker exec -it week2_fe sh
+docker exec -it be sh
+docker exec -it fe sh
 
 # Check resource usage
 docker stats
@@ -200,13 +200,13 @@ PATCH /api/todos/:id/toggle
 DELETE /api/todos/:id
 ```
 
-## Key Docker Concepts Practiced (Week 2)
+## Key Docker Concepts Practiced
 
 | Concept | Where it is used |
 |---------|-----------------|
 | **Multi-stage Dockerfile** | `FE/Dockerfile` (Vite build → nginx) |
 | **Named volumes** | `db-data` for SQLite persistence |
-| **Bridge networking** | `week2net` isolates containers |
+| **Bridge networking** | `net` isolates containers |
 | **Health checks** | `be` service uses `/health` endpoint |
 | **Non-root user** | `BE/Dockerfile` switches to `appuser` |
 | **Reverse proxy** | `nginx-proxy` routes traffic |
@@ -224,10 +224,10 @@ curl http://localhost:3000/health
 **Database not persisting after restart**
 ```bash
 # Verify volume exists
-docker volume ls | grep week2
+docker volume ls 
 
 # Inspect volume
-docker volume inspect week2_db_data
+docker volume inspect db_data
 ```
 
 **Port already in use**
@@ -241,4 +241,8 @@ docker volume inspect week2_db_data
 docker compose down
 docker compose down -v  # wipe volume
 docker compose up --build -d
+```
+## Bicep deployment
+```bash
+az deployment group create --name vm-linux --resource-group rg-intern-an --template-file ./infra/vm-linux.bicep --parameters ./infra/vm-linux.bicepparam --no-wait
 ```
